@@ -8,7 +8,7 @@ from telethon import TelegramClient, events
 import time
 import requests
 from collections import deque
-import zmq
+import socket
 
 load_dotenv()
 
@@ -210,58 +210,58 @@ def parse_signal(message):
 
 # ========== HÀM THỰC THI TÍN HIỆU ==========
 
+def send_to_ea(message):
+    """Gửi lệnh tới EA trong MT5 qua Socket TCP."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(10)
+        sock.connect(("127.0.0.1", EA_SOCKET_PORT))
+        sock.sendall(message.encode("utf-8"))
+        response = sock.recv(4096).decode("utf-8")
+        sock.close()
+        return response
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
 def execute_trade(signal):
-    """Thực thi tín hiệu: vào lệnh, đóng lệnh hoặc dời SL qua kết nối ZeroMQ tới EA trong MT5."""
+    """Thực thi tín hiệu: vào lệnh, đóng lệnh hoặc dời SL qua Socket TCP tới EA trong MT5."""
     action = signal.get('action')
 
-    # Thiết lập kết nối ZeroMQ tới EA chạy trong Wine trên Ubuntu
-    context = zmq.Context()
-    socket = context.socket(zmq.REQ)
-    socket.connect(f"tcp://localhost:{EA_SOCKET_PORT}")
+    if action == 'NEW_ORDER':
+        trade_action = signal.get('trade_action', 'BUY')
+        entry_min = signal.get('entry_min', 0)
+        entry_max = signal.get('entry_max', 0)
+        sl = signal.get('stop_loss', 0)
+        msg = f"NEW_ORDER|{trade_action}|{entry_min}|{entry_max}|{sl}"
+        result = send_to_ea(msg)
+        return result, "success" in result.lower() or "OK" in result.upper()
 
-    if action == 'CLOSE_ALL':
-        response = socket.send_string(json.dumps({"action": "CLOSE_ALL"}))
-        result = socket.recv_string()
-        return result, "success" in result.lower()
+    elif action == 'CLOSE_ALL':
+        result = send_to_ea("CLOSE_ALL")
+        return result, "success" in result.lower() or "OK" in result.upper()
 
     elif action == 'CLOSE_HALF':
-        response = socket.send_string(json.dumps({"action": "CLOSE_HALF"}))
-        result = socket.recv_string()
-        return result, "success" in result.lower()
+        result = send_to_ea("CLOSE_HALF")
+        return result, "success" in result.lower() or "OK" in result.upper()
 
     elif action == 'MOVE_SL_TO_ENTRY':
-        response = socket.send_string(json.dumps({"action": "MOVE_SL_TO_ENTRY"}))
-        result = socket.recv_string()
-        return result, "success" in result.lower()
+        result = send_to_ea("MOVE_SL_TO_ENTRY")
+        return result, "success" in result.lower() or "OK" in result.upper()
 
     elif action == 'MOVE_SL_PRICE':
-        response = socket.send_string(json.dumps({
-            "action": "MOVE_SL_PRICE",
-            "sl_price": signal.get('sl_price')
-        }))
-        result = socket.recv_string()
-        return result, "success" in result.lower()
-
-    elif action == 'NEW_ORDER':
-        trade_data = {
-            "action": "NEW_ORDER",
-            "trade_action": signal.get('trade_action'),
-            "entry_min": signal.get('entry_min'),
-            "entry_max": signal.get('entry_max'),
-            "sl": signal.get('stop_loss', 0.0)
-        }
-        response = socket.send_string(json.dumps(trade_data))
-        result = socket.recv_string()
-        return result, "success" in result.lower()
+        sl_price = signal.get('sl_price', 0)
+        result = send_to_ea(f"MOVE_SL_PRICE|{sl_price}")
+        return result, "success" in result.lower() or "OK" in result.upper()
 
     else:
-        return "Lỗi: Không thể xử lý tín hiệu được gửi", False
+        return "Loi: Khong xu ly duoc tin hieu", False
 
 
 # ========== MAIN APPLICATION ==========
 
 async def async_connect_mt5():
-    print("✅ Đang sử dụng kết nối ZeroMQ tới EA MT5 (không cần kết nối trực tiếp MT5).")
+    print("✅ Dang ket noi toi EA MT5 qua Socket TCP (127.0.0.1:{EA_SOCKET_PORT}).")
     return True
 
 async def async_initialize_gold_symbol():
