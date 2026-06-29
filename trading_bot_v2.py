@@ -3,16 +3,17 @@ import re
 import os
 import json
 from datetime import datetime
+from dotenv import load_dotenv
 from telethon import TelegramClient, events
 import time
 import requests
 from collections import deque
 import zmq
 
+load_dotenv()
+
 # Import cấu hình
 from config import TRADING_CONFIG, KEYWORDS, NOTIFICATION_BOT_TOKEN, NOTIFICATION_CHAT_ID
-
-load_dotenv()
 
 API_ID = int(os.getenv('API_ID', 'YOUR_API_ID'))
 API_HASH = os.getenv('API_HASH', 'YOUR_API_HASH')
